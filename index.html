@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Playtime</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0b1220;
+    color: #1c2536;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  main {
+    width: 100%;
+    max-width: 900px;
+    margin: 2rem;
+  }
+  .banner {
+    width: 100%;
+    height: 320px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    background: #0b1220;
+  }
+  .banner svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .caption-card {
+    background: #ffffff;
+    margin-top: -2rem;
+    position: relative;
+    z-index: 1;
+    margin-left: 1.5rem;
+    margin-right: 1.5rem;
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    text-align: center;
+  }
+  #caption {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    color: #1c2536;
+  }
+  #status {
+    text-align: center;
+    color: #8a94a6;
+    font-size: 0.8rem;
+    margin-top: 0.75rem;
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="banner">
+    <svg viewBox="0 0 900 320" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ff9a76"/>
+          <stop offset="45%" stop-color="#ffcf96"/>
+          <stop offset="100%" stop-color="#fdeeb3"/>
+        </linearGradient>
+        <linearGradient id="mtnBack" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#7c92b3"/>
+          <stop offset="100%" stop-color="#57678a"/>
+        </linearGradient>
+        <linearGradient id="mtnMid" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#4c5c7d"/>
+          <stop offset="100%" stop-color="#333f5c"/>
+        </linearGradient>
+        <linearGradient id="mtnFront" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#2b3350"/>
+          <stop offset="100%" stop-color="#171d33"/>
+        </linearGradient>
+      </defs>
+      <rect width="900" height="320" fill="url(#sky)"/>
+      <circle cx="700" cy="90" r="45" fill="#fff6d8" opacity="0.9"/>
+      <polygon points="0,220 120,90 220,190 300,110 420,220" fill="url(#mtnBack)"/>
+      <polygon points="150,260 320,120 470,240 600,140 760,260" fill="url(#mtnMid)"/>
+      <polygon points="-20,320 100,180 260,300 380,190 520,320" fill="url(#mtnFront)"/>
+      <polygon points="480,320 620,160 760,280 900,190 940,320" fill="url(#mtnFront)"/>
+    </svg>
+  </div>
+  <div class="caption-card">
+    <p id="caption">Loading message&hellip;</p>
+  </div>
+  <p id="status"></p>
+</main>
+
+<script type="importmap">
+{
+  "imports": {
+    "@datadog/openfeature-browser": "https://esm.sh/@datadog/openfeature-browser",
+    "@openfeature/web-sdk": "https://esm.sh/@openfeature/web-sdk"
+  }
+}
+</script>
+
+<script type="module">
+  import { DatadogProvider } from '@datadog/openfeature-browser';
+  import { OpenFeature } from '@openfeature/web-sdk';
+
+  const captionEl = document.getElementById('caption');
+  const statusEl = document.getElementById('status');
+  const DEFAULT_MESSAGE = 'Welcome! Come back later for a personalized message.';
+
+  // One shared 0-99 roll per page load; thresholds all start at 0 so ranges
+  // nest inside one another (hitting a low-rate flag implies every flag above
+  // it in this list also hit that same load).
+  const WEIGHTED_FLAGS = [
+    { key: 'new_onboarding', threshold: 50 },
+    { key: 'red',            threshold: 25 },
+    { key: 'orange',         threshold: 12 },
+    { key: 'yellow',         threshold: 6  },
+    { key: 'green',          threshold: 3  },
+    { key: 'blue',           threshold: 2  },
+    { key: 'indigo',         threshold: 1  },
+  ];
+
+  function getOrCreateTargetingKey() {
+    const STORAGE_KEY = 'playtime-targeting-key';
+    let key = localStorage.getItem(STORAGE_KEY);
+    if (!key) {
+      key = crypto.randomUUID();
+      localStorage.setItem(STORAGE_KEY, key);
+    }
+    return key + "-" + new Date().getTime();
+  }
+
+  function evaluateWeightedFlags(client) {
+    const roll = Math.floor(Math.random() * 100); // 0-99, shared by all flags this load
+    for (const { key, threshold } of WEIGHTED_FLAGS) {
+      if (roll >= threshold) continue;
+      try {
+        const value = client.getBooleanValue(key, false);
+        console.log(`[${key} flag] treatment:`, value, false);
+      } catch (err) {
+        console.error(`Failed to evaluate the "${key}" feature flag`, err);
+      }
+    }
+  }
+
+  async function init() {
+    const provider = new DatadogProvider({
+      applicationId: 'faca3176-e2ca-4977-b2af-49a0286ebaab',
+      clientToken: 'pubd29be090e2230ed6ed3b58e3ee479add',
+      flaggingProxy: 'https://datadog-proxy.vercel.app/api/flag-config',
+      site: 'datadoghq.com',
+      env: 'prod',
+    });
+
+    const evaluationContext = {
+      targetingKey: getOrCreateTargetingKey(),
+      userId: '123',
+      userRole: 'admin',
+    };
+
+    try {
+      await OpenFeature.setProviderAndWait(provider, evaluationContext);
+      const details = OpenFeature.getClient().getObjectDetails('playtime', {});
+      console.log('[playtime flag] resolution details:', details);
+      captionEl.textContent = details.value?.motd || DEFAULT_MESSAGE;
+      if (details.reason === 'ERROR' || details.reason === 'DEFAULT') {
+        statusEl.textContent = `Flag resolved with reason "${details.reason}"` +
+          (details.errorCode ? ` (${details.errorCode})` : '') +
+          ' — see console for full details.';
+      }
+
+      evaluateWeightedFlags(OpenFeature.getClient());
+    } catch (err) {
+      console.error('Failed to evaluate the "playtime" feature flag', err);
+      captionEl.textContent = DEFAULT_MESSAGE;
+      statusEl.textContent = 'Could not reach Datadog — showing default message.';
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
