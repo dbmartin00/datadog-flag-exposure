@@ -83,7 +83,7 @@ function App() {
   return (
     <div className="dashboard">
       <header className="dashboard-header">
-        <h1>DataDog Flag Exposure Dashboard</h1>
+        <h1>Flag Exposure Dashboard</h1>
         <div className="filters">
           <label>
             Time range
