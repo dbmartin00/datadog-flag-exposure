@@ -2,6 +2,8 @@
 
 A demo of Datadog feature flags (via [OpenFeature](https://openfeature.dev/)) with a full exposure-logging pipeline: every flag evaluation is captured, written to S3, made queryable with Athena, and visualized in a small React dashboard.
 
+![Reporting screenshot](images/exposure.jpg)
+
 ## How it fits together
 
 ```
