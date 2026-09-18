@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import './App.css';
+import GrowthChart from './GrowthChart';
 
 const RANGES = [
   { value: '20m', label: 'Last 20 minutes' },
@@ -32,7 +33,9 @@ function App() {
   const [flagBreakdown, setFlagBreakdown] = useState([]);
 
   const [uniqueCount, setUniqueCount] = useState(null);
+  const [pmfcrCount, setPmfcrCount] = useState(null);
   const [variationSplit, setVariationSplit] = useState([]);
+  const [growth, setGrowth] = useState([]);
 
   const [targetingKeyInput, setTargetingKeyInput] = useState('');
   const [targetingKeyResults, setTargetingKeyResults] = useState(null);
@@ -56,7 +59,12 @@ function App() {
       (rows) => setUniqueCount(rows[0]?.n ?? '0'),
       (err) => setError(err.message)
     );
+    fetchReport('pmfcr', { range, env }).then(
+      (rows) => setPmfcrCount(rows[0]?.n ?? '0'),
+      (err) => setError(err.message)
+    );
     fetchReport('variationTypeSplit', { range, env }).then(setVariationSplit, (err) => setError(err.message));
+    fetchReport('targetingKeyGrowth', { range, env }).then(setGrowth, (err) => setError(err.message));
   }, [range, env]);
 
   useEffect(() => {
@@ -145,6 +153,13 @@ function App() {
         <section className="panel">
           <h2>Unique targeting keys</h2>
           <p className="big-number">{uniqueCount ?? '…'}</p>
+          <h2 className="stat-label">pMFCR (SDK initializations)</h2>
+          <p className="big-number">{pmfcrCount ?? '…'}</p>
+        </section>
+
+        <section className="panel panel-wide">
+          <h2>Distinct targeting keys over time</h2>
+          <GrowthChart data={growth} range={range} />
         </section>
 
         <section className="panel">

@@ -60,6 +60,27 @@ async function evaluateWeightedFlags(client, evaluationContext) {
   }
 }
 
+// setProviderAndWait is what actually fetches a fresh ruleset from Datadog's
+// CDN — a real SDK-client initialization, not a per-flag cost. Guard it so the
+// fetch can only ever happen once per client instance (repeat calls reuse the
+// same in-flight/resolved promise instead of re-initializing), and track
+// whether the next exposure logged is the one that "paid for" that fetch —
+// our pseudo-MFCR (pMFCR) signal. Exactly one exposure per run should carry
+// pMFCR: 1; every other exposure in the same run shares that same
+// already-initialized client and carries pMFCR: 0.
+let providerInitCount = 0;
+let providerInitPromise = null;
+let pendingPmfcrCredit = false;
+
+function initializeProviderOnce() {
+  if (!providerInitPromise) {
+    providerInitCount += 1;
+    pendingPmfcrCredit = true;
+    providerInitPromise = OpenFeature.setProviderAndWait(tracer.openfeature);
+  }
+  return providerInitPromise;
+}
+
 async function init() {
   tracer.init();
 
@@ -72,13 +93,16 @@ async function init() {
     // Executes successfully after the flag is resolved
     after: (hookContext, evaluationDetails) => {
       // console.log('evaluationDetails', evaluationDetails);
+      const pMFCR = pendingPmfcrCredit ? 1 : 0;
+      pendingPmfcrCredit = false;
       const exposure = {
         targetingKey: evaluationContext.targetingKey,
         flag: evaluationDetails.flagKey,
         value: JSON.stringify(evaluationDetails.value),
         timestamp: evaluationDetails.flagMetadata.__dd_eval_timestamp_ms,
         variationType: evaluationDetails.flagMetadata.variationType,
-        env: process.env.DD_ENV
+        env: process.env.DD_ENV,
+        pMFCR,
       };
       console.log('exposure', exposure);
       pendingExposureWrites.push(writeExposureToS3(exposure));
@@ -101,7 +125,7 @@ async function init() {
   };
 
   try {
-    await OpenFeature.setProviderAndWait(tracer.openfeature);
+    await initializeProviderOnce();
     const client = OpenFeature.getClient();
     const details = await client.getObjectDetails('playtime', {}, evaluationContext);
     // console.log('[playtime flag] resolution details:', details);

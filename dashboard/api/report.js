@@ -1,4 +1,10 @@
-import { runAthenaQuery, buildTimeFilter, buildEnvFilter, escapeSqlString } from './_athena.js';
+import {
+  runAthenaQuery,
+  buildTimeFilter,
+  buildEnvFilter,
+  escapeSqlString,
+  bucketTargetingKeyGrowth,
+} from './_athena.js';
 
 export default async function handler(req, res) {
   const { metric, range = 'all', env = 'all', flag, targetingKey } = req.query;
@@ -29,10 +35,21 @@ export default async function handler(req, res) {
              WHERE ${timeFilter} AND ${envFilter}`;
       break;
 
+    case 'pmfcr':
+      sql = `SELECT COALESCE(SUM(pMFCR), 0) AS n FROM playtime.exposures
+             WHERE ${timeFilter} AND ${envFilter}`;
+      break;
+
     case 'variationTypeSplit':
       sql = `SELECT variationType, COUNT(*) AS n FROM playtime.exposures
              WHERE ${timeFilter} AND ${envFilter}
              GROUP BY variationType ORDER BY n DESC`;
+      break;
+
+    case 'targetingKeyGrowth':
+      sql = `SELECT targetingKey, MIN("timestamp") AS firstSeen FROM playtime.exposures
+             WHERE ${timeFilter} AND ${envFilter}
+             GROUP BY targetingKey`;
       break;
 
     case 'targetingKeyLookup':
@@ -47,7 +64,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const rows = await runAthenaQuery(sql);
+    const rawRows = await runAthenaQuery(sql);
+    const rows = metric === 'targetingKeyGrowth' ? bucketTargetingKeyGrowth(rawRows, range) : rawRows;
     res.status(200).json({ rows });
   } catch (err) {
     console.error('Athena query failed', err);

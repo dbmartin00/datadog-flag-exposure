@@ -34,6 +34,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+console.log('=== reload.js: reloading index.html in a real browser (Puppeteer). ===');
+console.log('=== This exercises the BROWSER flag demo only — it does NOT write to S3. ===');
+console.log('=== For the S3-writing CLI pipeline, run flags.js / run-flags.sh instead. ===\n');
+
 (async () => {
   const server = await startServer();
   let browser;

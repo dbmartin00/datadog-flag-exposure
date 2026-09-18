@@ -82,6 +82,62 @@ tbody tr:hover {
   margin: 0.5rem 0;
 }
 
+.stat-label {
+  margin-top: 1.25rem;
+}
+
+.panel-wide {
+  grid-column: 1 / -1;
+}
+
+.growth-chart {
+  position: relative;
+}
+
+.growth-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.chart-gridline {
+  stroke: #333;
+  stroke-width: 1;
+}
+
+.chart-axis-label {
+  fill: #898781;
+  font-size: 11px;
+}
+
+.chart-crosshair {
+  stroke: #52514e;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.chart-tooltip {
+  position: absolute;
+  transform: translateY(-100%);
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.chart-tooltip-sub {
+  color: #c3c2b7;
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.chart-empty {
+  color: #898781;
+}
+
 .drilldown {
   margin-top: 1rem;
   border-top: 1px dashed #333;

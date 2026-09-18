@@ -40,6 +40,43 @@ export function buildEnvFilter(env) {
   return `env = '${escapeSqlString(env)}'`;
 }
 
+const GROWTH_BUCKETS = 24;
+
+// Buckets each targetingKey's first-seen time (within the current filter) into
+// GROWTH_BUCKETS intervals and returns a running cumulative count per bucket.
+// `count` is the number of keys first seen in that bucket; the frontend treats
+// a zero count as "no growth" and breaks the line there rather than drawing a
+// flat segment through it.
+export function bucketTargetingKeyGrowth(rows, range) {
+  const firstSeenTimes = rows
+    .map((r) => r.firstseen ?? r.firstSeen)
+    .filter((v) => v != null)
+    .map(Number)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+
+  if (firstSeenTimes.length === 0) return [];
+
+  const rangeEnd = Date.now();
+  const ms = RANGE_MS[range];
+  const rangeStart = ms ? rangeEnd - ms : firstSeenTimes[0];
+  const bucketSize = (rangeEnd - rangeStart) / GROWTH_BUCKETS;
+  if (bucketSize <= 0) return [];
+
+  const counts = new Array(GROWTH_BUCKETS).fill(0);
+  for (const t of firstSeenTimes) {
+    if (t < rangeStart) continue;
+    const idx = Math.min(GROWTH_BUCKETS - 1, Math.max(0, Math.floor((t - rangeStart) / bucketSize)));
+    counts[idx] += 1;
+  }
+
+  let cumulative = 0;
+  return counts.map((count, i) => {
+    cumulative += count;
+    return { bucketStart: Math.round(rangeStart + i * bucketSize), count, cumulative };
+  });
+}
+
 export async function runAthenaQuery(sql) {
   const { QueryExecutionId } = await client.send(
     new StartQueryExecutionCommand({
