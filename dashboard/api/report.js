@@ -4,6 +4,7 @@ import {
   buildEnvFilter,
   escapeSqlString,
   bucketTargetingKeyGrowth,
+  buildPmfcrForecast,
 } from './_athena.js';
 
 export default async function handler(req, res) {
@@ -52,6 +53,12 @@ export default async function handler(req, res) {
              GROUP BY targetingKey`;
       break;
 
+    case 'pmfcrForecast':
+      // Deliberately ignores the range dropdown — this always covers month-to-date,
+      // since pMFCR resets monthly.
+      sql = `SELECT "timestamp" FROM playtime.exposures WHERE pMFCR = 1 AND ${envFilter}`;
+      break;
+
     case 'targetingKeyLookup':
       if (!targetingKey) return res.status(400).json({ error: 'targetingKey is required' });
       sql = `SELECT flag, value, "timestamp", variationType FROM playtime.exposures
@@ -65,7 +72,14 @@ export default async function handler(req, res) {
 
   try {
     const rawRows = await runAthenaQuery(sql);
-    const rows = metric === 'targetingKeyGrowth' ? bucketTargetingKeyGrowth(rawRows, range) : rawRows;
+    let rows;
+    if (metric === 'targetingKeyGrowth') {
+      rows = bucketTargetingKeyGrowth(rawRows, range);
+    } else if (metric === 'pmfcrForecast') {
+      rows = [buildPmfcrForecast(rawRows)];
+    } else {
+      rows = rawRows;
+    }
     res.status(200).json({ rows });
   } catch (err) {
     console.error('Athena query failed', err);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import './App.css';
 import GrowthChart from './GrowthChart';
+import ForecastChart from './ForecastChart';
 
 const RANGES = [
   { value: '20m', label: 'Last 20 minutes' },
@@ -36,6 +37,7 @@ function App() {
   const [pmfcrCount, setPmfcrCount] = useState(null);
   const [variationSplit, setVariationSplit] = useState([]);
   const [growth, setGrowth] = useState([]);
+  const [forecast, setForecast] = useState(null);
 
   const [targetingKeyInput, setTargetingKeyInput] = useState('');
   const [targetingKeyResults, setTargetingKeyResults] = useState(null);
@@ -65,6 +67,11 @@ function App() {
     );
     fetchReport('variationTypeSplit', { range, env }).then(setVariationSplit, (err) => setError(err.message));
     fetchReport('targetingKeyGrowth', { range, env }).then(setGrowth, (err) => setError(err.message));
+    // Deliberately not passing `range` — pMFCR forecast is always month-to-date.
+    fetchReport('pmfcrForecast', { env }).then(
+      (rows) => setForecast(rows[0]),
+      (err) => setError(err.message)
+    );
   }, [range, env]);
 
   useEffect(() => {
@@ -160,6 +167,11 @@ function App() {
         <section className="panel panel-wide">
           <h2>Distinct targeting keys over time</h2>
           <GrowthChart data={growth} range={range} />
+        </section>
+
+        <section className="panel panel-wide">
+          <h2>pMFCR forecast (month-to-date)</h2>
+          {forecast ? <ForecastChart data={forecast} /> : <p className="chart-empty">Loading…</p>}
         </section>
 
         <section className="panel">

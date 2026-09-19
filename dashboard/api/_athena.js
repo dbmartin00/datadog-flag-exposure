@@ -77,6 +77,72 @@ export function bucketTargetingKeyGrowth(rows, range) {
   });
 }
 
+const FORECAST_BUCKETS = 24;
+export const PMFCR_TARGET = 1_000_000;
+
+function startOfCurrentMonthMs() {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0);
+}
+
+// pMFCR resets monthly (the 1st, UTC) and is otherwise monotonically
+// increasing. Buckets this month's pMFCR=1 timestamps into a cumulative
+// series, fits a simple linear regression over it (x centered on the mean
+// for numerical stability), and — if the trend is actually rising — projects
+// the timestamp at which cumulative pMFCR would cross PMFCR_TARGET.
+export function buildPmfcrForecast(rows) {
+  const monthStart = startOfCurrentMonthMs();
+  const now = Date.now();
+
+  const times = rows
+    .map((r) => r.timestamp ?? r['timestamp'])
+    .filter((v) => v != null)
+    .map(Number)
+    .filter((t) => Number.isFinite(t) && t >= monthStart)
+    .sort((a, b) => a - b);
+
+  if (times.length === 0) {
+    return { buckets: [], currentTotal: 0, forecastTimestamp: null, monthStart, target: PMFCR_TARGET };
+  }
+
+  // Bucket from the first real event this month, not the literal calendar start —
+  // otherwise a long dead zone before activity existed dilutes the "current rate"
+  // regression and wastes most of the chart's resolution on flat zeros.
+  const activeStart = times[0];
+  const bucketSize = Math.max(1, (now - activeStart) / FORECAST_BUCKETS);
+  const counts = new Array(FORECAST_BUCKETS).fill(0);
+  for (const t of times) {
+    const idx = Math.min(FORECAST_BUCKETS - 1, Math.max(0, Math.floor((t - activeStart) / bucketSize)));
+    counts[idx] += 1;
+  }
+
+  let cumulative = 0;
+  const buckets = counts.map((count, i) => {
+    cumulative += count;
+    return { bucketStart: Math.round(activeStart + i * bucketSize), cumulative };
+  });
+
+  const n = buckets.length;
+  const meanX = buckets.reduce((s, b) => s + b.bucketStart, 0) / n;
+  const meanY = buckets.reduce((s, b) => s + b.cumulative, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (const b of buckets) {
+    const dx = b.bucketStart - meanX;
+    num += dx * (b.cumulative - meanY);
+    den += dx * dx;
+  }
+  const slope = den === 0 ? 0 : num / den; // pMFCR per millisecond
+
+  const currentTotal = buckets[buckets.length - 1].cumulative;
+  let forecastTimestamp = null;
+  if (slope > 0 && currentTotal < PMFCR_TARGET) {
+    forecastTimestamp = Math.round(meanX + (PMFCR_TARGET - meanY) / slope);
+  }
+
+  return { buckets, slope, currentTotal, forecastTimestamp, monthStart, target: PMFCR_TARGET };
+}
+
 export async function runAthenaQuery(sql) {
   const { QueryExecutionId } = await client.send(
     new StartQueryExecutionCommand({

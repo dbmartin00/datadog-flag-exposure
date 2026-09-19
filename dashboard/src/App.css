@@ -143,6 +143,22 @@ tbody tr:hover {
   color: #898781;
 }
 
+.forecast-headline {
+  font-size: 1.1rem;
+  margin: 0 0 0.25rem;
+}
+
+.forecast-date {
+  color: rgb(134, 112, 78);
+  font-weight: 600;
+}
+
+.forecast-substat {
+  color: #898781;
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
 .drilldown {
   margin-top: 1rem;
   border-top: 1px dashed #333;
