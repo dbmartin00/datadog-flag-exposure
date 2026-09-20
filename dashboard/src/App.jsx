@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 import GrowthChart from './GrowthChart';
 import ForecastChart from './ForecastChart';
@@ -11,9 +11,9 @@ const RANGES = [
   { value: 'all', label: 'All time' },
 ];
 
-async function fetchReport(metric, params = {}) {
+async function fetchReport(metric, params = {}, signal) {
   const qs = new URLSearchParams({ metric, ...params });
-  const res = await fetch(`/api/report?${qs.toString()}`);
+  const res = await fetch(`/api/report?${qs.toString()}`, { signal });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || 'Request failed');
   return body.rows;
@@ -44,34 +44,46 @@ function App() {
   const [targetingKeyError, setTargetingKeyError] = useState(null);
 
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const abortControllerRef = useRef(null);
+
+  function onError(err) {
+    if (err.name === 'AbortError') return; // superseded by a newer refresh — not a real failure
+    setError(err.message);
+  }
 
   useEffect(() => {
-    fetchReport('environments').then(
-      (rows) => setEnvironments(rows.map((r) => r.env).filter(Boolean)),
-      (err) => setError(err.message)
-    );
+    fetchReport('environments').then((rows) => setEnvironments(rows.map((r) => r.env).filter(Boolean)), onError);
   }, []);
 
   const refresh = useCallback(() => {
+    // Cancel any still-in-flight requests from a previous refresh (e.g. rapid dropdown
+    // changes) instead of just ignoring their results — two concurrent requests for the
+    // exact same URL (like pmfcrForecast, which doesn't vary by range) can otherwise
+    // leave one fetch permanently unresolved and hang Promise.allSettled forever.
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const { signal } = controller;
+
     setError(null);
     setSelectedFlag(null);
     setFlagBreakdown([]);
-    fetchReport('topFlags', { range, env }).then(setTopFlags, (err) => setError(err.message));
-    fetchReport('uniqueTargetingKeys', { range, env }).then(
-      (rows) => setUniqueCount(rows[0]?.n ?? '0'),
-      (err) => setError(err.message)
-    );
-    fetchReport('pmfcr', { range, env }).then(
-      (rows) => setPmfcrCount(rows[0]?.n ?? '0'),
-      (err) => setError(err.message)
-    );
-    fetchReport('variationTypeSplit', { range, env }).then(setVariationSplit, (err) => setError(err.message));
-    fetchReport('targetingKeyGrowth', { range, env }).then(setGrowth, (err) => setError(err.message));
-    // Deliberately not passing `range` — pMFCR forecast is always month-to-date.
-    fetchReport('pmfcrForecast', { env }).then(
-      (rows) => setForecast(rows[0]),
-      (err) => setError(err.message)
-    );
+    setLoading(true);
+
+    const requests = [
+      fetchReport('topFlags', { range, env }, signal).then(setTopFlags, onError),
+      fetchReport('uniqueTargetingKeys', { range, env }, signal).then((rows) => setUniqueCount(rows[0]?.n ?? '0'), onError),
+      fetchReport('pmfcr', { range, env }, signal).then((rows) => setPmfcrCount(rows[0]?.n ?? '0'), onError),
+      fetchReport('variationTypeSplit', { range, env }, signal).then(setVariationSplit, onError),
+      fetchReport('targetingKeyGrowth', { range, env }, signal).then(setGrowth, onError),
+      // Deliberately not passing `range` — pMFCR forecast is always month-to-date.
+      fetchReport('pmfcrForecast', { env }, signal).then((rows) => setForecast(rows[0]), onError),
+    ];
+
+    Promise.allSettled(requests).then(() => {
+      if (abortControllerRef.current === controller) setLoading(false);
+    });
   }, [range, env]);
 
   useEffect(() => {
@@ -100,6 +112,7 @@ function App() {
       <header className="dashboard-header">
         <h1>Flag Exposure Dashboard</h1>
         <div className="filters">
+          {loading && <span className="spinner" role="status" aria-label="Loading" />}
           <label>
             Time range
             <select value={range} onChange={(e) => setRange(e.target.value)}>
@@ -122,7 +135,7 @@ function App() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="panels">
+      <div className={`panels${loading ? ' panels-loading' : ''}`}>
         <section className="panel">
           <h2>Top flags</h2>
           <table>
@@ -162,6 +175,7 @@ function App() {
           <p className="big-number">{uniqueCount ?? '…'}</p>
           <h2 className="stat-label">pMFCR (SDK initializations)</h2>
           <p className="big-number">{pmfcrCount ?? '…'}</p>
+          <img src="/datadog-logo.png" alt="Datadog" className="panel-logo" />
         </section>
 
         <section className="panel panel-wide">

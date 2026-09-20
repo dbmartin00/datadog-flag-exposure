@@ -20,7 +20,27 @@
 
 .filters {
   display: flex;
+  align-items: center;
   gap: 1.5rem;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(134, 112, 78, 0.25);
+  border-top-color: rgb(134, 112, 78);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.panels-loading {
+  opacity: 0.6;
 }
 
 .filters label {
@@ -42,6 +62,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1.25rem;
+  transition: opacity 0.15s ease;
 }
 
 .panel {
@@ -49,6 +70,16 @@
   border: 1px solid rgb(134, 112, 78);
   border-radius: 8px;
   padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-logo {
+  margin-top: auto;
+  padding-top: 1rem;
+  max-width: 280px;
+  align-self: center;
+  opacity: 0.55;
 }
 
 .panel h2 {
