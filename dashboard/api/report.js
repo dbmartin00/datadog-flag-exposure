@@ -63,6 +63,16 @@ export default async function handler(req, res) {
       sql = `SELECT "timestamp" FROM playtime.exposures WHERE pMFCR = 1 AND ${envFilter}`;
       break;
 
+    case 'deploymentEvents':
+      // Not time-filtered server-side (same pattern as pmfcrForecast) — each of the
+      // three consuming charts clips to its own visible x-domain client-side, since
+      // they each show a different window.
+      sql = `SELECT service, env, version, started_at, finished_at, change_failure, team, git, custom_tags
+             FROM playtime.deployments
+             WHERE ${envFilter}
+             ORDER BY finished_at ASC`;
+      break;
+
     case 'targetingKeyLookup':
       if (!targetingKey) return res.status(400).json({ error: 'targetingKey is required' });
       sql = `SELECT flag, value, "timestamp", variationType FROM playtime.exposures

@@ -6,7 +6,7 @@
 }
 
 .dashboard-header h1 {
-  color: rgb(134, 112, 78);
+  color: rgb(131, 113, 83);
 }
 
 .dashboard-header {
@@ -27,8 +27,8 @@
 .spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(134, 112, 78, 0.25);
-  border-top-color: rgb(134, 112, 78);
+  border: 2px solid rgba(131, 113, 83, 0.25);
+  border-top-color: rgb(131, 113, 83);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -67,7 +67,7 @@
 
 .panel {
   background: #1a1a1a;
-  border: 1px solid rgb(134, 112, 78);
+  border: 1px solid rgb(131, 113, 83);
   border-radius: 8px;
   padding: 1rem 1.25rem;
   display: flex;
@@ -115,7 +115,7 @@ tbody tr:hover {
   font-size: 2.5rem;
   font-weight: 600;
   margin: 0.5rem 0;
-  color: rgb(134, 112, 78);
+  color: rgb(131, 113, 83);
 }
 
 .stat-label {
@@ -180,7 +180,7 @@ tbody tr:hover {
 }
 
 .forecast-date {
-  color: rgb(134, 112, 78);
+  color: rgb(131, 113, 83);
   font-weight: 600;
 }
 
@@ -198,6 +198,7 @@ tbody tr:hover {
 
 .lookup-form {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
@@ -205,4 +206,18 @@ tbody tr:hover {
 .lookup-form input {
   flex: 1;
   padding: 0.4rem 0.6rem;
+}
+
+/* Flag name links to Datadog's feature flags UI (not deep-linked to the specific flag yet) */
+.flag-link {
+  color: #3987e5;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* SVG text color comes from `fill`, not `color` — override .chart-axis-label's fill here */
+.flag-link-svg .chart-axis-label {
+  fill: #3987e5;
+  text-decoration: underline;
+  cursor: pointer;
 }

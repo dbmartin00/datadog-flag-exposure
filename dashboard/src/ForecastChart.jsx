@@ -1,11 +1,14 @@
 import { useMemo, useRef, useState } from 'react';
+import { projectDeployMarkers, clusterDeployMarkers, nearestDeployCluster } from './deployMarkerUtils';
+import DeployMarkers from './DeployMarkers';
+import DeployTooltip from './DeployTooltip';
 
 const WIDTH = 640;
 const HEIGHT = 220;
 const PAD = { top: 12, right: 16, bottom: 28, left: 56 };
 const PLOT_W = WIDTH - PAD.left - PAD.right;
 const PLOT_H = HEIGHT - PAD.top - PAD.bottom;
-const LINE_COLOR = 'rgb(134, 112, 78)'; // same dull gold used for pMFCR elsewhere in the UI
+const LINE_COLOR = 'rgb(131, 113, 83)'; // same dull gold used for pMFCR elsewhere in the UI
 const SURFACE_COLOR = '#1a1a1a';
 const TEN_YEARS_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
@@ -28,9 +31,9 @@ function formatAxisLabel(ms, includeTime) {
   return `${date} ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
 }
 
-export default function ForecastChart({ data }) {
+export default function ForecastChart({ data, deployments = [] }) {
   const containerRef = useRef(null);
-  const [hoverIndex, setHoverIndex] = useState(null);
+  const [hoverInfo, setHoverInfo] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   const { buckets, slope, currentTotal, forecastTimestamp, target } = data;
@@ -67,22 +70,34 @@ export default function ForecastChart({ data }) {
     [buckets, maxX, maxY, activeStart]
   );
 
+  // Clipped to [activeStart, now] — deliberately NOT extendedEnd, since a deploy is a
+  // real past event; showing one inside the dashed projection region would misleadingly
+  // suggest it's forecasted rather than actual.
+  const deployMarkers = useMemo(
+    () => projectDeployMarkers(deployments, xOf, activeStart, now),
+    [deployments, activeStart, now]
+  );
+  const deployClusters = useMemo(() => clusterDeployMarkers(deployMarkers), [deployMarkers]);
+
   const yTicks = [0, maxY / 2, maxY];
 
   function handleMove(e) {
     const rect = containerRef.current.getBoundingClientRect();
     const relX = ((e.clientX - rect.left) / rect.width) * WIDTH;
-    const idx = Math.round(((relX - PAD.left) / PLOT_W) * (points.length - 1));
-    const clamped = Math.min(points.length - 1, Math.max(0, idx));
-    setHoverIndex(clamped);
+    const cluster = nearestDeployCluster(deployClusters, relX);
+    if (cluster) {
+      setHoverInfo({ kind: 'deploy', ...cluster });
+    } else {
+      const idx = Math.round(((relX - PAD.left) / PLOT_W) * (points.length - 1));
+      const clamped = Math.min(points.length - 1, Math.max(0, idx));
+      setHoverInfo({ kind: 'bucket', ...points[clamped] });
+    }
     setTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   }
 
   if (!buckets.length) {
     return <p className="chart-empty">No pMFCR events yet this month</p>;
   }
-
-  const hovered = hoverIndex !== null ? points[hoverIndex] : null;
 
   return (
     <div className="growth-chart" ref={containerRef}>
@@ -147,16 +162,22 @@ export default function ForecastChart({ data }) {
 
         <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r={5} fill={LINE_COLOR} stroke={SURFACE_COLOR} strokeWidth={2} />
 
-        <rect x={PAD.left} y={PAD.top} width={PLOT_W} height={PLOT_H} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => setHoverIndex(null)} />
+        <DeployMarkers clusters={deployClusters} top={PAD.top} bottom={PAD.top + PLOT_H} />
 
-        {hovered && <line x1={hovered.x} x2={hovered.x} y1={PAD.top} y2={PAD.top + PLOT_H} className="chart-crosshair" />}
+        <rect x={PAD.left} y={PAD.top} width={PLOT_W} height={PLOT_H} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => setHoverInfo(null)} />
+
+        {hoverInfo && <line x1={hoverInfo.x} x2={hoverInfo.x} y1={PAD.top} y2={PAD.top + PLOT_H} className="chart-crosshair" />}
       </svg>
 
-      {hovered && (
+      {hoverInfo?.kind === 'bucket' && (
         <div className="chart-tooltip" style={{ left: Math.min(tooltipPos.x + 12, WIDTH - 170), top: tooltipPos.y }}>
-          <strong>{hovered.cumulative.toLocaleString()}</strong> total
-          <div className="chart-tooltip-sub">{formatDate(hovered.bucketStart)}</div>
+          <strong>{hoverInfo.cumulative.toLocaleString()}</strong> total
+          <div className="chart-tooltip-sub">{formatDate(hoverInfo.bucketStart)}</div>
         </div>
+      )}
+
+      {hoverInfo?.kind === 'deploy' && (
+        <DeployTooltip cluster={hoverInfo} style={{ left: Math.min(tooltipPos.x + 12, WIDTH - 170), top: tooltipPos.y }} />
       )}
     </div>
   );

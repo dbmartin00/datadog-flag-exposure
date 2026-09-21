@@ -195,6 +195,8 @@ You should see a count greater than zero. (Or just run the same query in the Ath
 | `EXPOSURE_S3_BUCKET` | `flags.js`, `dashboard/api` | The bucket created in step 1 |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | `flags.js` (via default AWS credential chain) and `dashboard/api` | Use the write-only user's key for `flags.js`, the read-only `playtime-reporting` user's key for the dashboard |
 | `AWS_REGION` | `dashboard/api` | Region the bucket/Athena live in |
+| `DEPLOYMENT_WEBHOOK_SECRET` | `dashboard/api` (webhook), `simulate-deploy.js` | Shared secret the webhook checks against the `x-deploy-webhook-secret` header — see [Deployment tracking](#deployment-tracking) |
+| `DEPLOYMENT_WEBHOOK_URL` | `simulate-deploy.js` | The deployed webhook's URL, e.g. `https://<your-deployment>.vercel.app/api/deployment-event` |
 
 ## Running the CLI
 
@@ -233,6 +235,61 @@ vercel deploy --prod  # production
 ```
 
 The same three AWS variables plus `EXPOSURE_S3_BUCKET` need to be registered as Vercel project env vars (Project Settings → Environment Variables, or `vercel env add <NAME> production,preview,development --sensitive`) for all three environments.
+
+## Deployment tracking
+
+The dashboard can annotate its time-series charts with a vertical line marking when a deployment happened — gold for a successful deploy, red for a failed one, with a hover tooltip showing full detail. In real life this event would come from a CI/CD system (Jenkins, GitHub Actions, GitLab CI — any of them can do a plain HTTP POST as a pipeline step); this project uses a generic webhook plus a CLI script that stands in for that CI step. The record shape deliberately mirrors [Datadog's own Deployment Tracking / DORA Metrics API](https://docs.datadoghq.com/api/latest/dora-metrics/) (`service`, `env`, `version`, `started_at`, `finished_at`, plus this project's own `change_failure` boolean), so swapping in the real API later is mostly a matter of pointing at a different URL.
+
+### 1. Create the Glue table
+
+```sql
+CREATE EXTERNAL TABLE playtime.deployments (
+  service string,
+  env string,
+  version string,
+  started_at bigint,
+  finished_at bigint,
+  change_failure boolean,
+  team string,
+  git string,
+  custom_tags string
+)
+ROW FORMAT SERDE 'org.openx.data.jsonserde.JsonSerDe'
+LOCATION 's3://<bucket-name>/deployments/'
+```
+
+`git` and `custom_tags` are stored as JSON-encoded **strings**, same reasoning as `value` in the `exposures` table above.
+
+### 2. Extend the read-only IAM user
+
+Add this statement to the `playtime-reporting` policy from AWS setup step 4 (alongside its existing `S3WriteAthenaResultsOnly` statement — the `GlueReadOnly`/`AthenaQueries` statements already cover the new table via their `Resource: "*"`):
+
+```json
+{
+  "Sid": "DeploymentEventsWrite",
+  "Effect": "Allow",
+  "Action": "s3:PutObject",
+  "Resource": "arn:aws:s3:::<bucket-name>/deployments/*"
+}
+```
+
+### 3. Set the webhook secret
+
+```bash
+vercel env add DEPLOYMENT_WEBHOOK_SECRET production,preview,development --sensitive
+```
+
+### 4. Fire a deployment event
+
+`simulate-deploy.js` (repo root, plain Node, mirrors `flags.js`'s style) POSTs a synthetic deployment event to the webhook:
+
+```bash
+DEPLOYMENT_WEBHOOK_URL=https://<your-deployment>.vercel.app/api/deployment-event \
+DEPLOYMENT_WEBHOOK_SECRET=<the secret from step 3> \
+node simulate-deploy.js prod v1.4.0 success
+```
+
+Arguments are positional and all optional: `<env> <version> <success|failure> [service] [timestamp]` — defaults are `$DD_ENV` (or `prod`), a timestamp-based version tag, `success`, `playtime`, and now, respectively.
 
 ## Notes / gotchas encountered building this
 

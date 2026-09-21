@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
 import GrowthChart from './GrowthChart';
 import ForecastChart from './ForecastChart';
+import TargetingKeyTimeline from './TargetingKeyTimeline';
 
 const RANGES = [
   { value: '20m', label: 'Last 20 minutes' },
@@ -38,10 +39,13 @@ function App() {
   const [variationSplit, setVariationSplit] = useState([]);
   const [growth, setGrowth] = useState([]);
   const [forecast, setForecast] = useState(null);
+  const [deployments, setDeployments] = useState([]);
 
   const [targetingKeyInput, setTargetingKeyInput] = useState('');
   const [targetingKeyResults, setTargetingKeyResults] = useState(null);
   const [targetingKeyError, setTargetingKeyError] = useState(null);
+  const [targetingKeyLoading, setTargetingKeyLoading] = useState(false);
+  const targetingKeyAbortRef = useRef(null);
 
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,6 +83,13 @@ function App() {
       fetchReport('targetingKeyGrowth', { range, env }, signal).then(setGrowth, onError),
       // Deliberately not passing `range` — pMFCR forecast is always month-to-date.
       fetchReport('pmfcrForecast', { env }, signal).then((rows) => setForecast(rows[0]), onError),
+      // Deliberately not passing `range` — each chart clips deploy events to its own visible domain.
+      fetchReport('deploymentEvents', { env }, signal).then(
+        // Athena returns every value as a string ("false"/"true"), which is truthy
+        // either way in JS — normalize to a real boolean here, once, for every consumer.
+        (rows) => setDeployments(rows.map((r) => ({ ...r, change_failure: r.change_failure === 'true', finished_at: Number(r.finished_at) }))),
+        onError
+      ),
     ];
 
     Promise.allSettled(requests).then(() => {
@@ -97,14 +108,27 @@ function App() {
 
   function lookupTargetingKey(e) {
     e.preventDefault();
-    setTargetingKeyError(null);
-    setTargetingKeyResults(null);
     const key = targetingKeyInput.trim();
     if (!key) return;
-    fetchReport('targetingKeyLookup', { range, env, targetingKey: key }).then(
-      setTargetingKeyResults,
-      (err) => setTargetingKeyError(err.message)
-    );
+
+    // Cancel a still-in-flight previous lookup instead of leaving it to race
+    // with this one (same hazard as the main refresh() batch — see its comment).
+    targetingKeyAbortRef.current?.abort();
+    const controller = new AbortController();
+    targetingKeyAbortRef.current = controller;
+
+    setTargetingKeyError(null);
+    setTargetingKeyResults(null);
+    setTargetingKeyLoading(true);
+
+    fetchReport('targetingKeyLookup', { range, env, targetingKey: key }, controller.signal)
+      .then(setTargetingKeyResults, (err) => {
+        if (err.name === 'AbortError') return;
+        setTargetingKeyError(err.message);
+      })
+      .finally(() => {
+        if (targetingKeyAbortRef.current === controller) setTargetingKeyLoading(false);
+      });
   }
 
   return (
@@ -180,12 +204,12 @@ function App() {
 
         <section className="panel panel-wide">
           <h2>Distinct targeting keys over time</h2>
-          <GrowthChart data={growth} range={range} />
+          <GrowthChart data={growth} range={range} deployments={deployments} />
         </section>
 
         <section className="panel panel-wide">
           <h2>pMFCR forecast (month-to-date)</h2>
-          {forecast ? <ForecastChart data={forecast} /> : <p className="chart-empty">Loading…</p>}
+          {forecast ? <ForecastChart data={forecast} deployments={deployments} /> : <p className="chart-empty">Loading…</p>}
         </section>
 
         <section className="panel">
@@ -204,7 +228,7 @@ function App() {
           </table>
         </section>
 
-        <section className="panel">
+        <section className="panel panel-wide">
           <h2>Look up a targeting key</h2>
           <form onSubmit={lookupTargetingKey} className="lookup-form">
             <input
@@ -213,21 +237,40 @@ function App() {
               value={targetingKeyInput}
               onChange={(e) => setTargetingKeyInput(e.target.value)}
             />
-            <button type="submit">Look up</button>
+            <button type="submit" disabled={targetingKeyLoading}>Look up</button>
+            {targetingKeyLoading && <span className="spinner" role="status" aria-label="Loading" />}
           </form>
           {targetingKeyError && <div className="error-banner">{targetingKeyError}</div>}
+          {targetingKeyResults?.length > 0 && (
+            <TargetingKeyTimeline rows={targetingKeyResults} range={range} deployments={deployments} />
+          )}
           {targetingKeyResults && (
             <table>
               <thead><tr><th>Flag</th><th>Value</th><th>Variation type</th><th>Timestamp</th></tr></thead>
               <tbody>
-                {targetingKeyResults.map((row, i) => (
-                  <tr key={i}>
-                    <td>{row.flag}</td>
-                    <td>{row.value}</td>
-                    <td>{row.variationtype ?? row.variationType}</td>
-                    <td>{formatTimestamp(row.timestamp)}</td>
-                  </tr>
-                ))}
+                {targetingKeyResults.map((row, i) => {
+                  const variationType = row.variationtype ?? row.variationType;
+                  const isBoolean = variationType === 'boolean';
+                  return (
+                    <tr key={i}>
+                      <td>
+                        <a
+                          href="https://app.datadoghq.com/feature-flags"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flag-link"
+                        >
+                          {row.flag}
+                        </a>
+                      </td>
+                      <td style={isBoolean ? { color: row.value === 'true' ? '#3987e5' : '#e66767' } : undefined}>
+                        {row.value}
+                      </td>
+                      <td>{variationType}</td>
+                      <td>{formatTimestamp(row.timestamp)}</td>
+                    </tr>
+                  );
+                })}
                 {targetingKeyResults.length === 0 && <tr><td colSpan={4}>No exposures found</td></tr>}
               </tbody>
             </table>

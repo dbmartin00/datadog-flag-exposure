@@ -1,4 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
+import { projectDeployMarkers, clusterDeployMarkers, nearestDeployCluster } from './deployMarkerUtils';
+import DeployMarkers from './DeployMarkers';
+import DeployTooltip from './DeployTooltip';
 
 const WIDTH = 640;
 const HEIGHT = 220;
@@ -26,12 +29,23 @@ function niceMax(value) {
   return step * magnitude;
 }
 
-export default function GrowthChart({ data, range }) {
+export default function GrowthChart({ data, range, deployments = [] }) {
   const containerRef = useRef(null);
-  const [hoverIndex, setHoverIndex] = useState(null);
+  const [hoverInfo, setHoverInfo] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   const maxY = useMemo(() => niceMax(data.length ? data[data.length - 1].cumulative : 0), [data]);
+
+  const domainStart = data.length ? data[0].bucketStart : Date.now();
+  const domainEnd = Date.now();
+  const xOf = (t) =>
+    domainEnd > domainStart ? PAD.left + ((t - domainStart) / (domainEnd - domainStart)) * PLOT_W : PAD.left;
+
+  const deployMarkers = useMemo(
+    () => projectDeployMarkers(deployments, xOf, domainStart, domainEnd),
+    [deployments, domainStart, domainEnd]
+  );
+  const deployClusters = useMemo(() => clusterDeployMarkers(deployMarkers), [deployMarkers]);
 
   const points = useMemo(
     () =>
@@ -64,17 +78,20 @@ export default function GrowthChart({ data, range }) {
   function handleMove(e) {
     const rect = containerRef.current.getBoundingClientRect();
     const relX = ((e.clientX - rect.left) / rect.width) * WIDTH;
-    const idx = Math.round(((relX - PAD.left) / PLOT_W) * (points.length - 1));
-    const clamped = Math.min(points.length - 1, Math.max(0, idx));
-    setHoverIndex(clamped);
+    const cluster = nearestDeployCluster(deployClusters, relX);
+    if (cluster) {
+      setHoverInfo({ kind: 'deploy', ...cluster });
+    } else {
+      const idx = Math.round(((relX - PAD.left) / PLOT_W) * (points.length - 1));
+      const clamped = Math.min(points.length - 1, Math.max(0, idx));
+      setHoverInfo({ kind: 'bucket', ...points[clamped] });
+    }
     setTooltipPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   }
 
   if (!data.length) {
     return <p className="chart-empty">No data</p>;
   }
-
-  const hovered = hoverIndex !== null ? points[hoverIndex] : null;
 
   return (
     <div className="growth-chart" ref={containerRef}>
@@ -130,6 +147,8 @@ export default function GrowthChart({ data, range }) {
           />
         )}
 
+        <DeployMarkers clusters={deployClusters} top={PAD.top} bottom={PAD.top + PLOT_H} />
+
         <rect
           x={PAD.left}
           y={PAD.top}
@@ -137,13 +156,13 @@ export default function GrowthChart({ data, range }) {
           height={PLOT_H}
           fill="transparent"
           onMouseMove={handleMove}
-          onMouseLeave={() => setHoverIndex(null)}
+          onMouseLeave={() => setHoverInfo(null)}
         />
 
-        {hovered && (
+        {hoverInfo && (
           <line
-            x1={hovered.x}
-            x2={hovered.x}
+            x1={hoverInfo.x}
+            x2={hoverInfo.x}
             y1={PAD.top}
             y2={PAD.top + PLOT_H}
             className="chart-crosshair"
@@ -151,16 +170,20 @@ export default function GrowthChart({ data, range }) {
         )}
       </svg>
 
-      {hovered && (
+      {hoverInfo?.kind === 'bucket' && (
         <div
           className="chart-tooltip"
           style={{ left: Math.min(tooltipPos.x + 12, WIDTH - 150), top: tooltipPos.y }}
         >
-          <strong>{hovered.cumulative}</strong> total
+          <strong>{hoverInfo.cumulative}</strong> total
           <div className="chart-tooltip-sub">
-            {hovered.count > 0 ? `+${hovered.count} new` : 'no growth'} · {formatBucketLabel(hovered.bucketStart, range)}
+            {hoverInfo.count > 0 ? `+${hoverInfo.count} new` : 'no growth'} · {formatBucketLabel(hoverInfo.bucketStart, range)}
           </div>
         </div>
+      )}
+
+      {hoverInfo?.kind === 'deploy' && (
+        <DeployTooltip cluster={hoverInfo} style={{ left: Math.min(tooltipPos.x + 12, WIDTH - 170), top: tooltipPos.y }} />
       )}
     </div>
   );
