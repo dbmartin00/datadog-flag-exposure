@@ -16,7 +16,7 @@ const client = new AthenaClient({
 const DATABASE = 'playtime';
 const OUTPUT_LOCATION = `s3://${process.env.EXPOSURE_S3_BUCKET}/athena-results/`;
 const POLL_INTERVAL_MS = 300;
-const POLL_TIMEOUT_MS = 8000;
+const POLL_TIMEOUT_MS = 45000;
 
 export function escapeSqlString(value) {
   return String(value).replace(/'/g, "''");

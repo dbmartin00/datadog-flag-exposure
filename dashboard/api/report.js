@@ -7,6 +7,10 @@ import {
   buildPmfcrForecast,
 } from './_athena.js';
 
+// Hobby plan's max allowed function duration — Athena cold starts (fresh
+// query planning, no cached results) can otherwise exceed the 10s default.
+export const config = { maxDuration: 60 };
+
 export default async function handler(req, res) {
   const { metric, range = 'all', env = 'all', flag, targetingKey } = req.query;
   const timeFilter = buildTimeFilter(range);
