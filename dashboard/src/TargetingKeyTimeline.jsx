@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { projectDeployMarkers, clusterDeployMarkers, nearestDeployCluster } from './deployMarkerUtils';
 import DeployMarkers from './DeployMarkers';
 import DeployTooltip from './DeployTooltip';
+import { githubFlagSearchUrl } from './flagLinks';
 
 const WIDTH = 640;
 const PAD = { top: 12, right: 16, bottom: 28, left: 120 };
@@ -103,19 +104,22 @@ export default function TargetingKeyTimeline({ rows, range, deployments = [] }) 
       <svg viewBox={`0 0 ${WIDTH} ${height}`} role="img" aria-label="Exposures for this targeting key over time">
         {flags.map((f, i) => {
           const y = PAD.top + i * LANE_HEIGHT + LANE_HEIGHT / 2;
+          const url = githubFlagSearchUrl(f);
+          const label = (
+            <text x={PAD.left - 8} y={y} className="chart-axis-label" textAnchor="end" dominantBaseline="middle">
+              {f}
+            </text>
+          );
           return (
             <g key={f}>
               <line x1={PAD.left} x2={WIDTH - PAD.right} y1={y} y2={y} className="chart-gridline" />
-              <a
-                href="https://app.datadoghq.com/feature-flags"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flag-link-svg"
-              >
-                <text x={PAD.left - 8} y={y} className="chart-axis-label" textAnchor="end" dominantBaseline="middle">
-                  {f}
-                </text>
-              </a>
+              {url ? (
+                <a href={url} target="_blank" rel="noopener noreferrer" className="flag-link-svg">
+                  {label}
+                </a>
+              ) : (
+                label
+              )}
             </g>
           );
         })}

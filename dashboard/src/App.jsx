@@ -3,6 +3,7 @@ import './App.css';
 import GrowthChart from './GrowthChart';
 import ForecastChart from './ForecastChart';
 import TargetingKeyTimeline from './TargetingKeyTimeline';
+import { githubFlagSearchUrl } from './flagLinks';
 
 const RANGES = [
   { value: '20m', label: 'Last 20 minutes' },
@@ -165,16 +166,33 @@ function App() {
           <table>
             <thead><tr><th>Flag</th><th>Exposures</th></tr></thead>
             <tbody>
-              {topFlags.map((row) => (
-                <tr
-                  key={row.flag}
-                  className={`clickable-row${row.flag === selectedFlag ? ' selected' : ''}`}
-                  onClick={() => selectFlag(row.flag)}
-                >
-                  <td>{row.flag}</td>
-                  <td>{row.n}</td>
-                </tr>
-              ))}
+              {topFlags.map((row) => {
+                const url = githubFlagSearchUrl(row.flag);
+                return (
+                  <tr
+                    key={row.flag}
+                    className={`clickable-row${row.flag === selectedFlag ? ' selected' : ''}`}
+                    onClick={() => selectFlag(row.flag)}
+                  >
+                    <td>
+                      {url ? (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flag-link"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {row.flag}
+                        </a>
+                      ) : (
+                        row.flag
+                      )}
+                    </td>
+                    <td>{row.n}</td>
+                  </tr>
+                );
+              })}
               {topFlags.length === 0 && <tr><td colSpan={2}>No data</td></tr>}
             </tbody>
           </table>
@@ -251,17 +269,22 @@ function App() {
                 {targetingKeyResults.map((row, i) => {
                   const variationType = row.variationtype ?? row.variationType;
                   const isBoolean = variationType === 'boolean';
+                  const url = githubFlagSearchUrl(row.flag);
                   return (
                     <tr key={i}>
                       <td>
-                        <a
-                          href="https://app.datadoghq.com/feature-flags"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flag-link"
-                        >
-                          {row.flag}
-                        </a>
+                        {url ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flag-link"
+                          >
+                            {row.flag}
+                          </a>
+                        ) : (
+                          row.flag
+                        )}
                       </td>
                       <td style={isBoolean ? { color: row.value === 'true' ? '#3987e5' : '#e66767' } : undefined}>
                         {row.value}
